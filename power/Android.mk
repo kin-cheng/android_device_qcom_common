@@ -49,6 +49,11 @@ ifeq ($(call is-board-platform-in-list, msm8952), true)
 LOCAL_SRC_FILES += power-8952.c
 endif
 
+ifeq ($(call is-board-platform-in-list,msm8937), true)
+LOCAL_SRC_FILES += power-8937.c
+LOCAL_CFLAGS += -DMPCTLV3
+endif
+
 ifeq ($(call is-board-platform-in-list, apq8084), true)
 LOCAL_SRC_FILES += power-8084.c
 endif
@@ -63,6 +68,7 @@ endif
 
 ifeq ($(call is-board-platform-in-list, msm8996), true)
 LOCAL_SRC_FILES += power-8996.c
+LOCAL_CFLAGS += -DMPCTLV3
 endif
 
 endif  #  End of board specific list

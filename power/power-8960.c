@@ -50,33 +50,30 @@
 
 static int current_power_profile = PROFILE_BALANCED;
 
-static int is_8064 = -1;
-
 int get_number_of_profiles() {
     return 3;
 }
 
-static int is_target_8064() /* Returns value=8064 if target is 8064 else value 0 */
+/**
+ * If target is 8064:
+ *     return 1
+ * else:
+ *     return 0
+ */
+static int is_target_8064(void)
 {
-    int fd;
-    char buf[10] = {0};
+    static int is_8064 = -1;
+    int soc_id;
 
     if (is_8064 >= 0)
         return is_8064;
 
-    fd = open("/sys/devices/system/soc/soc0/id", O_RDONLY);
-    if (fd >= 0) {
-        if (read(fd, buf, sizeof(buf) - 1) == -1) {
-            ALOGW("Unable to read soc_id");
-            is_8064 = 0;
-        } else {
-            int soc_id = atoi(buf);
-            if (soc_id == 153)  {
-                is_8064 = 8064;
-            }
-        }
-    }
-    close(fd);
+    soc_id = get_soc_id();
+    if (soc_id == 153)
+        is_8064 = 1;
+    else
+        is_8064 = 0;
+
     return is_8064;
 }
 
@@ -118,14 +115,14 @@ static void set_power_profile(int profile) {
             profile_high_performance_8064 : profile_high_performance_8960;
 
         perform_hint_action(DEFAULT_PROFILE_HINT_ID,
-            resource_values, sizeof(resource_values)/sizeof(resource_values[0]));
+            resource_values, ARRAY_SIZE(resource_values));
         ALOGD("%s: set performance mode", __func__);
     } else if (profile == PROFILE_POWER_SAVE) {
         int* resource_values = is_target_8064() ?
             profile_power_save_8064 : profile_power_save_8960;
 
         perform_hint_action(DEFAULT_PROFILE_HINT_ID,
-            resource_values, sizeof(resource_values)/sizeof(resource_values[0]));
+            resource_values, ARRAY_SIZE(resource_values));
         ALOGD("%s: set powersave", __func__);
     }
 

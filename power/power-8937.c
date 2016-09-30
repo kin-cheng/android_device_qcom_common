@@ -48,6 +48,7 @@
 #include "performance.h"
 #include "power-common.h"
 
+static int display_hint_sent;
 static int video_encode_hint_sent;
 static int current_power_profile = PROFILE_BALANCED;
 
@@ -55,24 +56,34 @@ static void process_video_encode_hint(void *metadata);
 
 extern void interaction(int duration, int num_args, int opt_list[]);
 
-static int profile_high_performance_8952[11] = {
-    SCHED_BOOST_ON,
-    0x704, 0x4d04, /* Enable all CPUs */
-    CPU0_MIN_FREQ_TURBO_MAX, CPU1_MIN_FREQ_TURBO_MAX,
-    CPU2_MIN_FREQ_TURBO_MAX, CPU3_MIN_FREQ_TURBO_MAX,
-    CPU4_MIN_FREQ_TURBO_MAX, CPU5_MIN_FREQ_TURBO_MAX,
-    CPU6_MIN_FREQ_TURBO_MAX, CPU7_MIN_FREQ_TURBO_MAX,
+static int profile_high_performance[] = {
+    SCHED_BOOST_ON_V3, 0x1,
+    ALL_CPUS_PWR_CLPS_DIS_V3, 0x1,
+    CPUS_ONLINE_MIN_BIG, 0x2,
+    CPUS_ONLINE_MIN_LITTLE, 0x2,
+    MIN_FREQ_BIG_CORE_0, 0xFFF,
+    MIN_FREQ_LITTLE_CORE_0, 0xFFF,
 };
 
-static int profile_power_save_8952[] = {
-    0x8fe, 0x3dfd, /* 1 big core, 2 little cores*/
-    CPUS_ONLINE_MAX_LIMIT_2,
-    CPU0_MAX_FREQ_NONTURBO_MAX, CPU1_MAX_FREQ_NONTURBO_MAX,
-    CPU2_MAX_FREQ_NONTURBO_MAX, CPU3_MAX_FREQ_NONTURBO_MAX,
+static int profile_power_save[] = {
+    CPUS_ONLINE_MAX_LIMIT_BIG, 0x1,
+    MAX_FREQ_BIG_CORE_0, 0x3bf,
+    MAX_FREQ_LITTLE_CORE_0, 0x300,
+};
+
+static int profile_bias_power[] = {
+    MAX_FREQ_BIG_CORE_0, 0x4B0,
+    MAX_FREQ_LITTLE_CORE_0, 0x300,
+};
+
+static int profile_bias_performance[] = {
+    CPUS_ONLINE_MAX_LIMIT_BIG, 0x2,
+    CPUS_ONLINE_MAX_LIMIT_LITTLE, 0x2,
+    MIN_FREQ_BIG_CORE_0, 0x540,
 };
 
 int get_number_of_profiles() {
-    return 3;
+    return 5;
 }
 
 static void set_power_profile(int profile) {
@@ -88,16 +99,23 @@ static void set_power_profile(int profile) {
     }
 
     if (profile == PROFILE_HIGH_PERFORMANCE) {
-        int *resource_values = profile_high_performance_8952;
-        perform_hint_action(DEFAULT_PROFILE_HINT_ID, resource_values,
-                ARRAY_SIZE(resource_values));
+        perform_hint_action(DEFAULT_PROFILE_HINT_ID, profile_high_performance,
+                ARRAY_SIZE(profile_high_performance));
         ALOGD("%s: set performance mode", __func__);
 
     } else if (profile == PROFILE_POWER_SAVE) {
-        int *resource_values = profile_power_save_8952;
-        perform_hint_action(DEFAULT_PROFILE_HINT_ID, resource_values,
-                ARRAY_SIZE(resource_values));
+        perform_hint_action(DEFAULT_PROFILE_HINT_ID, profile_power_save,
+                ARRAY_SIZE(profile_power_save));
         ALOGD("%s: set powersave", __func__);
+    } else if (profile == PROFILE_BIAS_POWER) {
+        perform_hint_action(DEFAULT_PROFILE_HINT_ID, profile_bias_power,
+                ARRAY_SIZE(profile_bias_power));
+        ALOGD("%s: Set bias power mode", __func__);
+
+    } else if (profile == PROFILE_BIAS_PERFORMANCE) {
+        perform_hint_action(DEFAULT_PROFILE_HINT_ID, profile_bias_performance,
+                ARRAY_SIZE(profile_bias_performance));
+        ALOGD("%s: Set bias perf mode", __func__);
     }
 
     current_power_profile = profile;
@@ -112,24 +130,28 @@ int  power_hint_override(struct power_module *module, power_hint_t hint,
     struct timeval cur_boost_timeval = {0, 0};
     double elapsed_time;
     int resources_launch_boost[] = {
-        ALL_CPUS_PWR_CLPS_DIS,
-        SCHED_BOOST_ON,
-        SCHED_PREFER_IDLE_DIS,
-        0x20f,
-        0x4001,
-        0x4101,
-        0x4201,
+        SCHED_BOOST_ON_V3, 0x1,
+        MAX_FREQ_BIG_CORE_0, 0xFFF,
+        MAX_FREQ_LITTLE_CORE_0, 0xFFF,
+        MIN_FREQ_BIG_CORE_0, 0xFFF,
+        MIN_FREQ_LITTLE_CORE_0, 0xFFF,
+        ALL_CPUS_PWR_CLPS_DIS_V3, 0x1,
+        STOR_CLK_SCALE_DIS, 0x1,
     };
+
     int resources_cpu_boost[] = {
-        ALL_CPUS_PWR_CLPS_DIS,
-        SCHED_BOOST_ON,
-        SCHED_PREFER_IDLE_DIS,
-        0x20d,
+        SCHED_BOOST_ON_V3, 0x1,
+        MIN_FREQ_BIG_CORE_0, 0x3BF,
     };
+
+    int resources_interaction_fling_boost[] = {
+        MIN_FREQ_BIG_CORE_0, 0x3BF,
+        MIN_FREQ_LITTLE_CORE_0, 0x300,
+        SCHED_BOOST_ON_V3, 0x1,
+    };
+
     int resources_interaction_boost[] = {
-        SCHED_PREFER_IDLE_DIS,
-        0x20d,
-        0x3d01,
+        MIN_FREQ_BIG_CORE_0, 0x300,
     };
 
     if (hint == POWER_HINT_SET_PROFILE) {
@@ -167,8 +189,8 @@ int  power_hint_override(struct power_module *module, power_hint_t hint,
             previous_boost_time = cur_boost_time;
 
             if (duration >= 1500) {
-                interaction(duration, ARRAY_SIZE(resources_cpu_boost),
-                        resources_cpu_boost);
+                interaction(duration, ARRAY_SIZE(resources_interaction_fling_boost),
+                        resources_interaction_fling_boost);
             } else {
                 interaction(duration, ARRAY_SIZE(resources_interaction_boost),
                         resources_interaction_boost);
@@ -216,8 +238,11 @@ int  set_interactive_override(struct power_module *module, int on)
                 (strlen(governor) == strlen(INTERACTIVE_GOVERNOR))) {
                int resource_values[] = {TR_MS_CPU0_50, TR_MS_CPU4_50};
 
-                perform_hint_action(DISPLAY_STATE_HINT_ID,
-                        resource_values, ARRAY_SIZE(resource_values));
+               if (!display_hint_sent) {
+                   perform_hint_action(DISPLAY_STATE_HINT_ID,
+                   resource_values, ARRAY_SIZE(resource_values));
+                  display_hint_sent = 1;
+                }
              } /* Perf time rate set for CORE0,CORE4 8952 target*/
 
     } else {
@@ -226,6 +251,7 @@ int  set_interactive_override(struct power_module *module, int on)
                 (strlen(governor) == strlen(INTERACTIVE_GOVERNOR))) {
 
              undo_hint_action(DISPLAY_STATE_HINT_ID);
+             display_hint_sent = 0;
           }
    }
     return HINT_HANDLED;
